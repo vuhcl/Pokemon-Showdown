@@ -31,16 +31,8 @@ class RandomGen7Teams extends RandomTeams {
 		let baseSpecies = species;
 		let forme = species.name;
 
-		if (!species.exists || (!species.randomBattleMoves && (!isDoubles || !species.randomDoubleBattleMoves) && !this.dex.data.Learnsets[species.id])) {
-			// GET IT? UNOWN? BECAUSE WE CAN'T TELL WHAT THE POKEMON IS
-			species = this.dex.getSpecies('unown');
-
-			const err = new Error('Species incompatible with random battles: ' + species);
-			Monitor.crashlog(err, 'The gen 7 randbat set generator');
-		}
-
 		if (species.battleOnly) {
-			// Only change the species. The species has custom moves, and may have different typing and requirements.
+			// Only change the forme. The species has custom moves, and may have different typing and requirements.
 			forme = /** @type {string} */ (species.battleOnly);
 		}
 		let battleForme = this.checkBattleForme(species);
@@ -186,9 +178,7 @@ class RandomGen7Teams extends RandomTeams {
 
 				// Set up once and only if we have the moves for it
 				case 'bellydrum': case 'bulkup': case 'coil': case 'curse': case 'dragondance': case 'honeclaws': case 'swordsdance':
-					if (counter.setupType !== 'Physical' || counter['physicalsetup'] > 1) {
-						if (!hasMove['growth'] || hasMove['sunnyday']) rejected = true;
-					}
+					if (counter.setupType !== 'Physical' || counter['physicalsetup'] > 1) rejected = true;
 					if (counter.Physical + counter['physicalpool'] < 2 && (!hasMove['rest'] || !hasMove['sleeptalk'])) rejected = true;
 					if (moveid === 'bellydrum' && !hasAbility['Unburden'] && !counter['priority']) rejected = true;
 					isSetup = true;
@@ -525,23 +515,12 @@ class RandomGen7Teams extends RandomTeams {
 					break;
 				}
 
-				// Increased/decreased priority moves are unneeded with moves that boost only speed
-				if (move.priority !== 0 && !!counter['speedsetup']) {
-					rejected = true;
-				}
-
 				// This move doesn't satisfy our setup requirements:
 				if ((move.category === 'Physical' && counter.setupType === 'Special') || (move.category === 'Special' && counter.setupType === 'Physical')) {
 					// Reject STABs last in case the setup type changes later on
 					// @ts-ignore
 					let stabs = counter[species.types[0]] + (counter[species.types[1]] || 0);
 					if (!SetupException.includes(moveid) && (!hasType[move.type] || stabs > 1 || counter[move.category] < 2)) rejected = true;
-				}
-				// @ts-ignore
-				if (counter.setupType && !isSetup && counter.setupType !== 'Mixed' && move.category !== counter.setupType && counter[counter.setupType] < 2 && (move.category !== 'Status' || !move.flags.heal) && moveid !== 'sleeptalk' && !hasType['Dark'] && !hasMove['darkpulse']) {
-					// Reject Status moves only if there is nothing else to reject
-					// @ts-ignore
-					if (move.category !== 'Status' || counter[counter.setupType] + counter.Status > 3 && counter['physicalsetup'] + counter['specialsetup'] < 2) rejected = true;
 				}
 				if (counter.setupType === 'Special' && moveid === 'hiddenpower' && species.types.length > 1 && counter['Special'] <= 2 && !hasType[move.type] && !counter['Physical'] && counter['specialpool']) {
 					// Hidden Power isn't good enough
@@ -550,7 +529,7 @@ class RandomGen7Teams extends RandomTeams {
 
 				// Pokemon should have moves that benefit their Type/Ability/Weather, as well as moves required by its forme
 				// @ts-ignore
-				if (!rejected && (counter['physicalsetup'] + counter['specialsetup'] < 2 && (!counter.setupType || counter.setupType === 'Mixed' || (move.category !== counter.setupType && move.category !== 'Status') || counter[counter.setupType] + counter.Status > 3)) &&
+				if (!rejected && !['judgment', 'sleeptalk'].includes(moveid) && (counter['physicalsetup'] + counter['specialsetup'] < 2 && (!counter.setupType || counter.setupType === 'Mixed' || (move.category !== counter.setupType && move.category !== 'Status') || (counter[counter.setupType] + counter.Status > 3 && !counter.hazards))) &&
 					((!counter.stab && !hasMove['nightshade'] && !hasMove['seismictoss'] && (species.types.length > 1 || (species.types[0] !== 'Normal' && species.types[0] !== 'Psychic') || !hasMove['icebeam'] || species.baseStats.spa >= species.baseStats.spd)) ||
 					(hasType['Bug'] && (movePool.includes('megahorn') || movePool.includes('pinmissile'))) ||
 					((hasType['Dark'] && !counter['Dark'] && !hasAbility['Protean']) || hasMove['suckerpunch'] && !hasAbility['Contrary'] && counter.stab < species.types.length) ||
@@ -565,6 +544,7 @@ class RandomGen7Teams extends RandomTeams {
 					(hasType['Ground'] && !counter['Ground'] && !hasMove['rest'] && !hasMove['sleeptalk']) ||
 					(hasType['Ice'] && !counter['Ice'] && !hasAbility['Refrigerate']) ||
 					(hasType['Normal'] && (movePool.includes('boomburst') || hasAbility['Guts'] && movePool.includes('facade'))) ||
+					(hasType['Poison'] && !counter['Poison'] && (hasAbility['Sheer Force'] || counter.setupType)) ||
 					(hasType['Psychic'] && !!counter['Psychic'] && (movePool.includes('psychicfangs') || !hasType['Flying'] && !hasAbility['Pixilate'] && counter.stab < species.types.length)) ||
 					(hasType['Rock'] && !counter['Rock'] && !hasType['Fairy'] && (species.baseStats.atk >= 105 || hasAbility['Rock Head'] || counter.setupType === 'Physical')) ||
 					(((hasType['Steel'] && (hasAbility['Technician'] || hasMove['trickroom'])) || hasAbility['Steelworker']) && !counter['Steel']) ||
@@ -575,13 +555,12 @@ class RandomGen7Teams extends RandomTeams {
 					(hasAbility['Contrary'] && !counter['contrary'] && species.name !== 'Shuckle') ||
 					(hasAbility['Psychic Surge'] && !counter['Psychic']) ||
 					(hasAbility['Slow Start'] && movePool.includes('substitute')) ||
-					(hasAbility['Stance Change'] && !counter.setupType && movePool.includes('kingsshield')) ||
-					(!counter.recovery && !counter.setupType && !hasMove['healingwish'] && (movePool.includes('recover') || movePool.includes('roost') || movePool.includes('softboiled')) && (counter.Status > 1 || (species.nfe && !!counter['Status']))) ||
+					(!counter.recovery && !counter.setupType && !hasMove['healingwish'] && !hasMove['trick'] && (movePool.includes('recover') || movePool.includes('roost') || movePool.includes('softboiled')) && (counter.Status > 1 || (species.nfe && !!counter['Status']))) ||
 					(movePool.includes('stickyweb') && !counter.setupType && !teamDetails.stickyWeb) ||
 					(species.requiredMove && movePool.includes(toID(species.requiredMove)))))) {
 					// Reject Status or non-STAB
-					if (!isSetup && !move.weather && !move.damage && (move.category !== 'Status' || !move.flags.heal) && moveid !== 'judgment' && moveid !== 'sleeptalk') {
-						if (move.category === 'Status' || !hasType[move.type] || move.selfSwitch || move.basePower && move.basePower < 40 && !move.multihit) rejected = true;
+					if (!isSetup && !move.weather && !move.sideCondition && !move.stallingMove && !move.damage && (move.category !== 'Status' || !move.flags.heal)) {
+						if (move.category === 'Status' || move.selfSwitch || !hasType[move.type] || move.basePower && move.basePower < 40 && !move.multihit) rejected = true;
 					}
 				}
 
@@ -993,30 +972,18 @@ class RandomGen7Teams extends RandomTeams {
 
 		if (!isDoubles) {
 			/** @type {{[tier: string]: number}} */
-			let levelScale = {
-				'(PU)': 89,
-				PU: 88,
-				PUBL: 87,
-				NU: 86,
-				NUBL: 85,
-				RU: 84,
-				RUBL: 83,
-				UU: 82,
-				UUBL: 81,
-				'(OU)': 80,
-				OU: 80,
-				Uber: 78,
+			const levelScale = {
+				uber: 78, ou: 80, uu: 82, ru: 84, nu: 86, pu: 88,
 			};
 			/** @type {{[forme: string]: number}} */
-			let customScale = {
+			const customScale = {
 				// Banned Ability
 				Dugtrio: 82, Gothitelle: 82, Pelipper: 84, Politoed: 84, Wobbuffet: 82,
-
 				// Holistic judgement
-				'Floette-Eternal': 80, 'Genesect-Douse': 80,
 				Castform: 100, Delibird: 100, Spinda: 100, Unown: 100,
 			};
-			level = levelScale[species.tier] || 90;
+			let tier = toID(species.tier).replace('bl', '');
+			level = levelScale[tier] || (species.nfe ? 90 : 80);
 			if (customScale[forme]) level = customScale[forme];
 
 			// Custom level based on moveset
